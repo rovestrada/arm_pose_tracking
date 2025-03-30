@@ -1,7 +1,9 @@
 PShape base, shoulder, upArm, loArm, end;
 float rotX, rotY;
-float posX = 2000, posY = 70, posZ = 100;
+float posX = 0, posY = 60, posZ = 0; // Posición inicial del extremo del brazo
 float alpha, beta, gamma;
+float start_square_y = 60;
+float start_square_z = 0;
 
 float F = 50;
 float T = 70;
@@ -132,24 +134,24 @@ void writePos() {
   
   float size = 30;  // Tamaño del cuadrado reducido
 
-  posX = 20;
-  posZ = 20;
+  start_square_y = 60;  // Posición inicial en Y
+  start_square_z = 0;   // Posición inicial en Z
 
-  // // Movimiento en forma de cuadrado
-  // if (gTime < 1) {
-  //   posX = -size;              // Lado izquierdo
-  //   posZ = -size + (gTime * 2 * size);
-  // } 
-  // else if (gTime >= 1 && gTime < 2) {
-  //   posX = -size + ((gTime - 1) * 2 * size);  // Parte superior
-  //   posZ = size;
-  // } 
-  // else if (gTime >= 2 && gTime < 3) {
-  //   posX = size;               // Lado derecho
-  //   posZ = size - ((gTime - 2) * 2 * size);
-  // } 
-  // else if (gTime >= 3 && gTime < 4) {
-  //   posX = size - ((gTime - 3) * 2 * size);  // Parte inferior
-  //   posZ = -size;
-  // }
+  // Movimiento en forma de cuadrado
+  if (gTime < 1) {
+    posY = start_square_y -size;              // Lado izquierdo
+    posZ = start_square_z -size + (gTime * 2 * size);
+  } 
+  else if (gTime >= 1 && gTime < 2) {
+    posY = start_square_y - size + ((gTime - 1) * 2 * size);  // Parte superior
+    posZ = start_square_z + size;
+  } 
+  else if (gTime >= 2 && gTime < 3) {
+    posY = start_square_y + size;               // Lado derecho
+    posZ = start_square_z + size - ((gTime - 2) * 2 * size);
+  } 
+  else if (gTime >= 3 && gTime < 4) {
+    posY = start_square_y + size - ((gTime - 3) * 2 * size);  // Parte inferior
+    posZ = start_square_z - size;
+  }
 }
