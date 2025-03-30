@@ -5,9 +5,10 @@ float alpha, beta, gamma;
 float start_square_y = 60;
 float start_square_z = 0;
 
+
 float F = 50;
 float T = 70;
-float millisOld, gTime, gSpeed = 4;
+float millisOld, gTime, gSpeed = 2;
 
 float[] Xsphere = new float[20];
 float[] Ysphere = new float[20];
