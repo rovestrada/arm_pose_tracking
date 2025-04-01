@@ -14,29 +14,60 @@ float[] Xsphere = new float[20];
 float[] Ysphere = new float[20];
 float[] Zsphere = new float[20];
 
+// Variables para la rutina basada en CSV
+Table physicalTable;
+int currentStep = 0;
+int stepDelay = 500;  // milisegundos entre cada paso
+int lastUpdateTime = 0;
+
+// Variables para interpolar
+PVector prevTarget;
+PVector nextTarget;
+
 void setup() {
-    size(1200, 800, OPENGL);
-    
-    // Load default point of view configuration
-    String[] config = loadStrings("config/viewConfig.txt");
-    if (config != null && config.length >= 2) {
-      rotX = float(config[0]);
-      rotY = float(config[1]);
-      println("Vista cargada: rotX =", rotX, "rotY =", rotY);
-    }
+  size(1200, 800, OPENGL);
+  
+  // Load default point of view configuration
+  String[] config = loadStrings("config/viewConfig.txt");
+  if (config != null && config.length >= 2) {
+    rotX = float(config[0]);
+    rotY = float(config[1]);
+    println("Vista cargada: rotX =", rotX, "rotY =", rotY);
+  }
 
 
-    base = loadShape("meshes/r5.obj");
-    shoulder = loadShape("meshes/r1.obj");
-    upArm = loadShape("meshes/r2.obj");
-    loArm = loadShape("meshes/r3.obj");
-    end = loadShape("meshes/r4.obj");
+  base = loadShape("meshes/r5.obj");
+  shoulder = loadShape("meshes/r1.obj");
+  upArm = loadShape("meshes/r2.obj");
+  loArm = loadShape("meshes/r3.obj");
+  end = loadShape("meshes/r4.obj");
+  
+  shoulder.disableStyle();
+  upArm.disableStyle();
+  loArm.disableStyle(); 
+  
+  millisOld = millis() / 1000.0;  // Inicializar tiempo
     
-    shoulder.disableStyle();
-    upArm.disableStyle();
-    loArm.disableStyle(); 
-    
-    millisOld = millis() / 1000.0;  // Inicializar tiempo
+  // Cargar el CSV con los resultados físicos del punto rojo
+  physicalTable = loadTable("utils/physical_red_results.csv", "header");
+  if (physicalTable == null) {
+    println("No se pudo cargar physical_red_results.csv");
+  }
+  lastUpdateTime = millis();
+
+  // Inicializar prevTarget y nextTarget a partir del primer registro (si existe)
+  if (physicalTable != null && physicalTable.getRowCount() > 0) {
+    TableRow row0 = physicalTable.getRow(0);
+    float x0 = row0.getFloat("x");
+    float y0 = row0.getFloat("y");
+    float z0 = row0.getFloat("z");
+    prevTarget = new PVector(x0, y0, z0);
+    nextTarget = new PVector(x0, y0, z0);
+    posX = x0;
+    posY = y0;
+    posZ = z0;
+  }
+
 }
 
 // Save actual point of view configuration in a text file
@@ -49,7 +80,14 @@ void keyPressed() {
 }
 
 void draw() { 
-   writePos();
+
+  // Actualiza la posición del efector final (punto rojo) interpolando entre datos del CSV
+  updateArmPositionFromCSV();
+
+  // Calcula la cinemática inversa usando la posición actual
+  IK();
+
+  //  writePos();
    background(32);
    smooth();
    lights();
@@ -104,6 +142,34 @@ void draw() {
    shape(end);
 }
 
+void updateArmPositionFromCSV() {
+  if (physicalTable == null) return;
+  int rowCount = physicalTable.getRowCount();
+  if (rowCount == 0) return;
+  
+  // Calcula el factor de interpolación (t entre 0 y 1)
+  float t = (millis() - lastUpdateTime) / float(stepDelay);
+  t = constrain(t, 0, 1);
+  
+  // Interpolación lineal entre prevTarget y nextTarget
+  posX = lerp(prevTarget.x, nextTarget.x, t);
+  posY = lerp(prevTarget.y, nextTarget.y, t);
+  posZ = lerp(prevTarget.z, nextTarget.z, t);
+  
+  // Si t alcanza 1, pasa al siguiente registro del CSV
+  if (t >= 1.0) {
+    // Actualiza prevTarget al actual nextTarget
+    prevTarget = nextTarget.copy();
+    currentStep = (currentStep + 1) % rowCount;
+    TableRow row = physicalTable.getRow(currentStep);
+    nextTarget = new PVector(row.getFloat("x"), row.getFloat("y"), row.getFloat("z"));
+    lastUpdateTime = millis();
+  }
+  
+  println("Interpolated PhysicalRed: ", posX, posY, posZ);
+}
+
+
 void mouseDragged() {
     rotY -= (mouseX - pmouseX) * 0.01;
     rotX -= (mouseY - pmouseY) * 0.01;
@@ -133,26 +199,26 @@ void writePos() {
   IK();
   setTime();
   
-  float size = 30;  // Tamaño del cuadrado reducido
+  // float size = 30;  // Tamaño del cuadrado reducido
 
-  start_square_y = 60;  // Posición inicial en Y
-  start_square_z = 0;   // Posición inicial en Z
+  // start_square_y = 60;  // Posición inicial en Y
+  // start_square_z = 0;   // Posición inicial en Z
 
   // Movimiento en forma de cuadrado
-  if (gTime < 1) {
-    posY = start_square_y -size;              // Lado izquierdo
-    posZ = start_square_z -size + (gTime * 2 * size);
-  } 
-  else if (gTime >= 1 && gTime < 2) {
-    posY = start_square_y - size + ((gTime - 1) * 2 * size);  // Parte superior
-    posZ = start_square_z + size;
-  } 
-  else if (gTime >= 2 && gTime < 3) {
-    posY = start_square_y + size;               // Lado derecho
-    posZ = start_square_z + size - ((gTime - 2) * 2 * size);
-  } 
-  else if (gTime >= 3 && gTime < 4) {
-    posY = start_square_y + size - ((gTime - 3) * 2 * size);  // Parte inferior
-    posZ = start_square_z - size;
-  }
+  //if (gTime < 1) {
+  //  posY = start_square_y -size;              // Lado izquierdo
+  //  posZ = start_square_z -size + (gTime * 2 * size);
+  //} 
+  //else if (gTime >= 1 && gTime < 2) {
+  //  posY = start_square_y - size + ((gTime - 1) * 2 * size);  // Parte superior
+  //  posZ = start_square_z + size;
+  //} 
+  //else if (gTime >= 2 && gTime < 3) {
+  //  posY = start_square_y + size;               // Lado derecho
+  //  posZ = start_square_z + size - ((gTime - 2) * 2 * size);
+  //} 
+  //else if (gTime >= 3 && gTime < 4) {
+  //  posY = start_square_y + size - ((gTime - 3) * 2 * size);  // Parte inferior
+  //  posZ = start_square_z - size;
+  //}
 }

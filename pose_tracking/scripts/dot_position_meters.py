@@ -59,6 +59,20 @@ def detect_color_points(frame, color_ranges, multi_detection_colors=None):
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
     return detected_points, frame
 
+def pixel_to_physical(pixel_coord):
+    """
+    Convierte una coordenada en píxeles (relativa al punto verde) a coordenadas físicas (en metros)
+    en Processing para el punto rojo, usando el mapeo lineal obtenido:
+       physical_y = -0.3745*p_x - 0.01281*p_y - 29.15
+       physical_z =  0.03843*p_x + 0.2577*p_y + 60.96
+       physical_x se asume 0.
+    """
+    p_x, p_y = pixel_coord
+    physical_y = -0.3745 * p_x - 0.01281 * p_y - 29.15
+    physical_z =  0.03843 * p_x + 0.2577 * p_y + 60.96
+    physical_x = 0
+    return [physical_x, physical_y, physical_z]
+
 def main():
     # Rangos HSV basados en los colores proporcionados:
     # Los valores pueden necesitar ajuste dependiendo de las condiciones de iluminación.
@@ -75,7 +89,7 @@ def main():
     multi_detection_colors = ["celeste"]
     
     # Ruta de la imagen
-    image_path = "/home/rovestrada/pose_track_ws/pose_tracking/screenshots/dotted/0_60_0_dotted.jpeg"
+    image_path = "/home/rovestrada/pose_track_ws/pose_tracking/screenshots/dotted/0_120_60_dotted.jpeg"
     frame = cv2.imread(image_path)
     if frame is None:
         print("No se pudo cargar la imagen desde:", image_path)
@@ -98,13 +112,10 @@ def main():
     else:
         print("No se detectó el punto verde de la base.")
     
-    # Imprimir (anotar) en la imagen las posiciones relativas
-    # Se utiliza la información en detected_points para posicionar el texto
+    # Anotar en la imagen las posiciones relativas
     for color, rel in relative_positions.items():
         if isinstance(rel, list):
-            # Para colores con múltiples detecciones (ej. celeste)
             for idx, (dx, dy) in enumerate(rel):
-                # Obtener posición original para ubicar el texto
                 (x, y) = detected_points[color][idx]
                 text = f"{color}:({dx},{dy})"
                 cv2.putText(annotated_frame, text, (x + 5, y - 10),
@@ -115,6 +126,20 @@ def main():
             text = f"{color}:({dx},{dy})"
             cv2.putText(annotated_frame, text, (x + 5, y - 10),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    
+    # Si se detectó el punto rojo, se calcula su posición física aproximada
+    if "red" in relative_positions:
+        # Se asume que relative_positions["red"] es una tupla (p_x, p_y)
+        red_rel = relative_positions["red"]
+        red_physical = pixel_to_physical(red_rel)
+        print("La posición física aproximada del punto rojo es:", red_physical)
+        # Anotar en la imagen también la posición física
+        (rx, ry) = detected_points["red"]
+        text_phys = f"PhysRed:{red_physical}"
+        cv2.putText(annotated_frame, text_phys, (rx + 5, ry - 25),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 2)
+    else:
+        print("No se detectó el punto rojo.")
     
     cv2.imshow("Marcadores detectados y posiciones relativas", annotated_frame)
     cv2.waitKey(0)

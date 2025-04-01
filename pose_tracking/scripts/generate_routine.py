@@ -1,5 +1,7 @@
 import cv2
 import numpy as np
+import csv
+import os
 
 def detect_color_points(frame, color_ranges, multi_detection_colors=None):
     """
@@ -39,7 +41,7 @@ def detect_color_points(frame, color_ranges, multi_detection_colors=None):
                         cX = int(M["m10"] / M["m00"])
                         cY = int(M["m01"] / M["m00"])
                         points.append((cX, cY))
-                        # Dibujar el punto y etiquetar con el nombre del color
+                        # Dibujar y etiquetar el punto
                         cv2.circle(frame, (cX, cY), 5, (255, 255, 255), -1)
                         cv2.putText(frame, color, (cX + 5, cY + 5),
                                     cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
@@ -59,9 +61,49 @@ def detect_color_points(frame, color_ranges, multi_detection_colors=None):
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 2)
     return detected_points, frame
 
+def pixel_to_physical(pixel_coord):
+    """
+    Convierte una coordenada en píxeles (relativa al punto verde) a coordenadas físicas
+    en Processing (en metros) para el punto rojo, usando un mapeo lineal obtenido:
+      physical_y = -0.3745*p_x - 0.01281*p_y - 29.15
+      physical_z =  0.03843*p_x + 0.2577*p_y + 60.96
+      Se asume physical_x = 0.
+    """
+    p_x, p_y = pixel_coord
+    physical_y = -0.3745 * p_x - 0.01281 * p_y - 29.15
+    physical_z =  0.03843 * p_x + 0.2577 * p_y + 60.96
+    physical_x = 0
+    return [physical_x, physical_y, physical_z]
+
+def process_image(image_path, color_ranges, multi_detection_colors):
+    """
+    Lee la imagen en 'image_path', detecta los marcadores y calcula la posición física
+    del punto rojo (PhysicalRed) a partir de la posición relativa respecto al punto verde.
+    Devuelve la lista [x, y, z] o None si falla la detección.
+    """
+    frame = cv2.imread(image_path)
+    if frame is None:
+        print("No se pudo cargar la imagen:", image_path)
+        return None
+    
+    detected_points, _ = detect_color_points(frame, color_ranges, multi_detection_colors)
+    
+    if "green" not in detected_points:
+        print("No se detectó el punto verde en:", image_path)
+        return None
+    base = detected_points["green"]
+    
+    if "red" not in detected_points:
+        print("No se detectó el punto rojo en:", image_path)
+        return None
+    red = detected_points["red"]
+    # Calcula la posición relativa (en píxeles) del rojo respecto al verde
+    red_rel = (red[0] - base[0], red[1] - base[1])
+    red_phys = pixel_to_physical(red_rel)
+    return red_phys
+
 def main():
-    # Rangos HSV basados en los colores proporcionados:
-    # Los valores pueden necesitar ajuste dependiendo de las condiciones de iluminación.
+    # Define los rangos HSV para cada color
     color_ranges = {
         "red": [((0, 100, 100), (10, 255, 255)), ((170, 100, 100), (179, 255, 255))],  # ff0000
         "pink": [((140, 100, 100), (160, 255, 255))],   # f900ff
@@ -70,55 +112,37 @@ def main():
         "celeste": [((85, 100, 100), (95, 255, 255))],   # 00fff7
         "green": [((50, 100, 100), (70, 255, 255))]      # 12ff00
     }
-    
-    # Se especifica que se desea detectar múltiples puntos para "celeste"
     multi_detection_colors = ["celeste"]
+
+    # Archivo CSV de entrada (con columna "path")
+    input_csv = "/home/rovestrada/pose_track_ws/pose_tracking/utils/image_paths.csv"
+    # Archivo CSV de salida
+    output_csv = "/home/rovestrada/pose_track_ws/pose_tracking/utils/physical_red_results.csv"
     
-    # Ruta de la imagen
-    image_path = "/home/rovestrada/pose_track_ws/pose_tracking/screenshots/dotted/0_60_0_dotted.jpeg"
-    frame = cv2.imread(image_path)
-    if frame is None:
-        print("No se pudo cargar la imagen desde:", image_path)
-        return
+    results = []  # Cada elemento: [point, x, y, z]
     
-    # Detectar puntos de color
-    detected_points, annotated_frame = detect_color_points(frame, color_ranges, multi_detection_colors)
-    print("Puntos detectados:", detected_points)
-    
-    # Calcular posiciones relativas respecto al origen (punto verde)
-    relative_positions = {}
-    if "green" in detected_points:
-        base = detected_points["green"]
-        for color, points in detected_points.items():
-            if isinstance(points, list):
-                relative_positions[color] = [(p[0] - base[0], p[1] - base[1]) for p in points]
+    # Abrir el CSV de entrada y procesar cada imagen
+    with open(input_csv, newline='', encoding='utf-8') as csvfile:
+        reader = csv.DictReader(csvfile)
+        for idx, row in enumerate(reader, start=1):
+            image_path = row["path"]
+            # Si el path es relativo, se asume que es relativo al directorio actual
+            image_path = os.path.normpath(image_path)
+            red_phys = process_image(image_path, color_ranges, multi_detection_colors)
+            if red_phys is not None:
+                results.append([idx, red_phys[0], red_phys[1], red_phys[2]])
+                print(f"Imagen {idx}: PhysicalRed =", red_phys)
             else:
-                relative_positions[color] = (points[0] - base[0], points[1] - base[1])
-        print("Posiciones relativas (en píxeles):", relative_positions)
-    else:
-        print("No se detectó el punto verde de la base.")
+                print(f"Imagen {idx}: No se pudo obtener la posición física del rojo.")
     
-    # Imprimir (anotar) en la imagen las posiciones relativas
-    # Se utiliza la información en detected_points para posicionar el texto
-    for color, rel in relative_positions.items():
-        if isinstance(rel, list):
-            # Para colores con múltiples detecciones (ej. celeste)
-            for idx, (dx, dy) in enumerate(rel):
-                # Obtener posición original para ubicar el texto
-                (x, y) = detected_points[color][idx]
-                text = f"{color}:({dx},{dy})"
-                cv2.putText(annotated_frame, text, (x + 5, y - 10),
-                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
-        else:
-            (dx, dy) = rel
-            (x, y) = detected_points[color]
-            text = f"{color}:({dx},{dy})"
-            cv2.putText(annotated_frame, text, (x + 5, y - 10),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    # Escribir resultados en el CSV de salida
+    with open(output_csv, "w", newline='', encoding='utf-8') as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["point", "x", "y", "z"])
+        for row in results:
+            writer.writerow(row)
     
-    cv2.imshow("Marcadores detectados y posiciones relativas", annotated_frame)
-    cv2.waitKey(0)
-    cv2.destroyAllWindows()
+    print("Proceso completado. Resultados guardados en", output_csv)
 
 if __name__ == "__main__":
     main()
